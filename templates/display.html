@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Bar Display</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: black; font-family: 'Segoe UI', sans-serif; }
+        
+        /* DER HAUPT-CONTAINER (Wird rotiert) */
+        #main-layout {
+            position: fixed;
+            top: 50%; left: 50%; /* Startpunkt Mitte */
+            transform-origin: center center; /* Drehen um die eigene Achse */
+            /* Standardgröße (wird per JS überschrieben bei Rotation) */
+            width: 100vw; height: 100vh; 
+            display: flex;
+            background: black;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5); /* Schöner Schatten bei Rotation */
+        }
+
+        /* SIDEBAR */
+        #sidebar {
+            display: none;
+            width: 25%;
+            background: #1a1a1a;
+            color: white;
+            flex-direction: column;
+            padding: 30px;
+            box-sizing: border-box;
+            border-right: 2px solid #333;
+            z-index: 50;
+        }
+        #sidebar-clock { font-size: 4vw; font-weight: bold; color: #007bff; margin-bottom: 20px; }
+        #sidebar-logo { width: 80%; margin-bottom: 30px; display: block; }
+        #sidebar-title { font-size: 2.5vw; border-bottom: 2px solid #007bff; padding-bottom: 10px; margin-bottom: 20px;}
+        #sidebar-content { font-size: 1.5vw; white-space: pre-line; line-height: 1.5; color: #ccc;}
+
+        /* CONTENT BEREICH */
+        #rotator-wrapper {
+            flex-grow: 1; 
+            position: relative;
+            overflow: hidden;
+            background: black;
+            width: 100%; height: 100%;
+        }
+        
+        #rotator {
+            width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+            position: relative; overflow: hidden;
+        }
+
+        /* MEDIA & EFFECTS */
+        .media-item { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; z-index: 1; transition: opacity 1s ease-in-out; }
+        
+        .effect-fade .media-item { transition: opacity 1s ease-in-out; } 
+        .effect-fade .media-item.active { opacity: 1; z-index: 2; }
+        
+        .effect-slide .media-item { transition: transform 0.8s ease-out; transform: translateX(100%); opacity: 1; display: none; } 
+        .effect-slide .media-item.active { display: block; transform: translateX(0); z-index: 2; } 
+        .effect-slide .media-item.last-active { display: block; transform: translateX(0); z-index: 1; }
+        
+        .effect-zoom .media-item { transition: opacity 1s, transform 2s; transform: scale(1.2); opacity: 0; } 
+        .effect-zoom .media-item.active { transform: scale(1.0); opacity: 1; z-index: 2; }
+        
+        .effect-flip { perspective: 1000px; } 
+        .effect-flip .media-item { transition: transform 0.8s, opacity 0.5s; transform: rotateY(-90deg); opacity: 0; } 
+        .effect-flip .media-item.active { transform: rotateY(0deg); opacity: 1; z-index: 2; }
+        
+        .effect-none .media-item.active { opacity: 1; z-index: 2; transition: none; }
+
+        /* WIDGETS */
+        .overlay-widget { position: absolute; z-index: 20; border-radius: 8px; display: none; transition: top 0.5s ease, right 0.5s ease; }
+        #qr-overlay { top: 20px; right: 20px; width: 15vh; height: 15vh; padding: 10px; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        #qr-overlay img { width: 100%; height: 100%; display: block; }
+        
+        #weather-widget { top: 20px; left: 20px; background: rgba(0,0,0,0.6); color: white; padding: 10px 20px; text-align: center; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(5px); box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        #w-temp { font-size: 40px; font-weight: bold; display: block; } 
+        #w-city { font-size: 16px; opacity: 0.8; text-transform: uppercase; }
+        
+        #logo-overlay { position: absolute; z-index: 30; width: 150px; height: auto; display: none; padding: 20px; } 
+        #logo-overlay img { width: 100%; height: auto; display: block; max-height: 200px; filter: drop-shadow(0 0 5px rgba(0,0,0,0.5)); }
+        
+        #ticker-wrap { position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; line-height: 60px; overflow: hidden; z-index: 10; font-size: 30px; font-weight: bold; display: none; }
+        .ticker-move { display: inline-block; white-space: nowrap; padding-left: 100%; animation: ticker 15s linear infinite; }
+        @keyframes ticker { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-100%, 0, 0); } }
+
+        /* COUNTDOWN */
+        #countdown-widget { position: absolute; bottom: 80px; right: 20px; z-index: 25; background: rgba(0,0,0,0.7); color: white; padding: 15px 25px; border-radius: 10px; text-align: center; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(5px); display: none; box-shadow: 0 0 15px rgba(0,0,0,0.6); }
+        #cd-label { font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 5px; color: #ffc107;}
+        #cd-timer { font-size: 3rem; font-weight: bold; font-family: monospace; line-height: 1;}
+
+        /* OVERRIDE LAYER */
+        #override-layer { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 9999; background: black; display: none; justify-content: center; align-items: center; text-align: center; flex-direction: column; }
+        #override-content { color: white; font-weight: bold; font-size: 8vw; padding: 20px; white-space: pre-line; text-shadow: 2px 2px 10px rgba(0,0,0,0.5); }
+        .style-alert { background: linear-gradient(45deg, #ff0000, #990000); animation: pulse-bg 1s infinite alternate; }
+        .style-party { background: linear-gradient(45deg, #ff00cc, #333399); animation: rainbow 5s infinite; }
+        .style-warning { background: linear-gradient(45deg, #ffcc00, #ff6600); color: black !important; }
+        @keyframes pulse-bg { from { background-color: #aa0000; } to { background-color: #ff0000; } }
+        @keyframes rainbow { 0%{filter: hue-rotate(0deg);} 100%{filter: hue-rotate(360deg);} }
+
+    </style>
+</head>
+<body id="body">
+    
+    <div id="override-layer"><div id="override-content"></div></div>
+
+    <div id="main-layout">
+        
+        <div id="sidebar">
+            <div id="sidebar-clock">00:00</div>
+            <img id="sidebar-logo" src="/static/logo.png" onerror="this.style.display='none'">
+            <div id="sidebar-title"></div>
+            <div id="sidebar-content"></div>
+        </div>
+
+        <div id="rotator-wrapper">
+            <div id="rotator" class="effect-fade">
+                <div id="media-container"></div>
+                
+                <div id="qr-overlay" class="overlay-widget"><img id="qr-image" src=""></div>
+                <div id="weather-widget" class="overlay-widget"><span id="w-city"></span><span id="w-temp">--°</span></div>
+                
+                <div id="countdown-widget">
+                    <div id="cd-label"></div>
+                    <div id="cd-timer"></div>
+                </div>
+
+                <div id="logo-overlay"><img id="logo-img" src="/static/logo.png"></div>
+                <div id="ticker-wrap"><div class="ticker-move" id="ticker-text"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let playlist = []; let settings = {}; let currentIndex = -1; let timer = null; let overrideActive = false;
+        let countdownInterval = null;
+
+        async function updateData() {
+            try {
+                const res = await fetch('/api/data');
+                const data = await res.json();
+                handleOverride(data.override);
+                applySettings(data.settings);
+                const newPlaylist = JSON.stringify(data.files);
+                if (JSON.stringify(playlist) !== newPlaylist) { playlist = data.files; renderPlaylist(); if (currentIndex === -1 && playlist.length > 0) nextSlide(); }
+            } catch(e) { console.log(e); }
+        }
+
+        function handleOverride(ov) {
+            const layer = document.getElementById('override-layer');
+            const content = document.getElementById('override-content');
+            if (ov && ov.active) {
+                overrideActive = true; layer.style.display = 'flex'; content.innerText = ov.content; layer.className = 'style-' + ov.style;
+                const video = document.querySelector('video'); if(video) video.pause();
+                
+                // Override drehen basierend auf Settings
+                layer.style.transformOrigin = 'center center';
+                // Hier müssen wir den Override auch drehen, aber ohne Dimensionstausch, da er fixed 100vw/100vh ist.
+                // Das ist etwas tricky, da fixed layer sich am Viewport orientieren.
+                // Einfachste Lösung: Wir drehen den Inhalt des Overrides, nicht den Container.
+                // (Wird hier vereinfacht weggelassen, da Override meist Vollbild Farben sind)
+                
+            } else { if (overrideActive) { layer.style.display = 'none'; overrideActive = false; nextSlide(); } }
+        }
+
+        function applySettings(newSettings) {
+            // 1. ROTATION LOGIK (Korrigiert)
+            const mainLayout = document.getElementById('main-layout');
+            const rot = newSettings.rotation;
+            
+            // Standard Reset
+            mainLayout.style.width = '100vw';
+            mainLayout.style.height = '100vh';
+            
+            // Die Magie:
+            // 1. In die Mitte schieben (-50%, -50%)
+            // 2. Drehen
+            mainLayout.style.transform = `translate(-50%, -50%) rotate(${rot}deg)`;
+
+            // 3. Dimensionen tauschen bei 90/270 Grad
+            if (rot === 90 || rot === 270) {
+                mainLayout.style.width = '100vh';
+                mainLayout.style.height = '100vw';
+            }
+
+            // 2. SIDEBAR
+            const sidebar = document.getElementById('sidebar');
+            if (newSettings.layout === 'sidebar') {
+                sidebar.style.display = 'flex';
+                document.getElementById('sidebar-title').innerText = newSettings.sidebar_title;
+                document.getElementById('sidebar-content').innerText = newSettings.sidebar_text;
+                const sLogo = document.getElementById('sidebar-logo'); 
+                if(!sLogo.src.includes('?t=')) sLogo.src = "/static/logo.png?t=" + new Date().getTime();
+                document.getElementById('sidebar-clock').style.display = newSettings.sidebar_clock ? 'block' : 'none';
+            } else { sidebar.style.display = 'none'; }
+
+            // 3. WIDGETS
+            if (newSettings.weather_active && newSettings.weather_city !== settings.weather_city) { fetchWeather(newSettings.weather_city); }
+            if (newSettings.logo_active) {
+                const logoImg = document.getElementById('logo-img');
+                if(!logoImg.src.includes('?t=')) { logoImg.src = "/static/logo.png?t=" + new Date().getTime(); logoImg.onload = function() { calculateLayout(newSettings); }; }
+            }
+            
+            settings = newSettings;
+            
+            // Animation setzen
+            const rotator = document.getElementById('rotator');
+            rotator.className = 'effect-' + (settings.transition || 'fade');
+
+            // Ticker & Co
+            const tickerWrap = document.getElementById('ticker-wrap');
+            if (settings.ticker_active && settings.ticker_text && !overrideActive) {
+                tickerWrap.style.display = 'block'; document.getElementById('ticker-text').innerText = settings.ticker_text;
+                tickerWrap.style.backgroundColor = settings.ticker_bg; tickerWrap.style.color = settings.ticker_color;
+            } else { tickerWrap.style.display = 'none'; }
+            
+            document.getElementById('weather-widget').style.display = (settings.weather_active && !overrideActive) ? 'block' : 'none';
+            const qrWrap = document.getElementById('qr-overlay');
+            if (settings.qr_active && settings.qr_text && !overrideActive) {
+                qrWrap.style.display = 'block'; document.getElementById('qr-image').src = "/static/qr_code.png?t=" + new Date().getTime();
+            } else { qrWrap.style.display = 'none'; }
+            document.getElementById('logo-overlay').style.display = (settings.logo_active && !overrideActive) ? 'block' : 'none';
+            
+            const cdWidget = document.getElementById('countdown-widget');
+            if (settings.countdown_active && settings.countdown_target && !overrideActive) {
+                cdWidget.style.display = 'block';
+                document.getElementById('cd-label').innerText = settings.countdown_label;
+                startCountdown(settings.countdown_target);
+            } else {
+                cdWidget.style.display = 'none';
+                if(countdownInterval) clearInterval(countdownInterval);
+            }
+
+            calculateLayout(settings);
+        }
+
+        function startCountdown(targetISO) {
+            if(countdownInterval) clearInterval(countdownInterval);
+            const targetTime = new Date(targetISO).getTime();
+            const updateTimer = () => {
+                const now = new Date().getTime();
+                const distance = targetTime - now;
+                if (distance < 0) { document.getElementById('cd-timer').innerText = "00:00:00"; return; }
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                let text = ""; if(days > 0) text += days + "d ";
+                text += (hours < 10 ? "0"+hours : hours) + ":"; text += (minutes < 10 ? "0"+minutes : minutes) + ":"; text += (seconds < 10 ? "0"+seconds : seconds);
+                document.getElementById('cd-timer').innerText = text;
+            };
+            updateTimer(); countdownInterval = setInterval(updateTimer, 1000);
+        }
+
+        function calculateLayout(currentSettings) {
+            const logoDiv = document.getElementById('logo-overlay'); const weatherWidget = document.getElementById('weather-widget'); const qrWidget = document.getElementById('qr-overlay');
+            weatherWidget.style.top = '20px'; qrWidget.style.top = '20px';
+            if (!currentSettings.logo_active) return;
+            logoDiv.style.top = 'auto'; logoDiv.style.bottom = 'auto'; logoDiv.style.left = 'auto'; logoDiv.style.right = 'auto';
+            if (currentSettings.logo_position.includes('top')) logoDiv.style.top = '0px';
+            if (currentSettings.logo_position.includes('bottom')) logoDiv.style.bottom = '60px'; 
+            if (currentSettings.logo_position.includes('left')) logoDiv.style.left = '0px';
+            if (currentSettings.logo_position.includes('right')) logoDiv.style.right = '0px';
+            const logoHeight = logoDiv.offsetHeight; const buffer = 15; 
+            if (currentSettings.logo_position === 'top-left' && currentSettings.weather_active) weatherWidget.style.top = (logoHeight + buffer) + 'px';
+            if (currentSettings.logo_position === 'top-right' && currentSettings.qr_active) qrWidget.style.top = (logoHeight + buffer) + 'px';
+        }
+        async function fetchWeather(city) {
+            if (!city) return;
+            try {
+                const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${city}&count=1&language=de&format=json`);
+                const geoData = await geoRes.json();
+                if (!geoData.results) return;
+                const { latitude: lat, longitude: lon, name } = geoData.results[0];
+                const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);
+                const wData = await wRes.json();
+                document.getElementById('w-city').innerText = name; document.getElementById('w-temp').innerText = Math.round(wData.current_weather.temperature) + "°";
+            } catch (e) { console.error(e); }
+        }
+        function renderPlaylist() {
+            const container = document.getElementById('media-container'); container.innerHTML = '';
+            playlist.forEach((item, index) => {
+                let el; if (item.type === 'video') { el = document.createElement('video'); el.muted = true; el.playsInline = true; } else { el = document.createElement('img'); }
+                el.src = item.url; el.className = 'media-item'; el.id = 'slide-' + index; container.appendChild(el);
+            });
+        }
+        function nextSlide() {
+            if (overrideActive) { timer = setTimeout(nextSlide, 2000); return; }
+            if (playlist.length === 0) return;
+            if (currentIndex >= 0) {
+                const oldItem = document.getElementById('slide-' + currentIndex);
+                if(oldItem) { oldItem.classList.remove('active'); oldItem.classList.add('last-active'); setTimeout(() => { oldItem.classList.remove('last-active'); }, 1000); if(oldItem.tagName === 'VIDEO') oldItem.pause(); }
+            }
+            currentIndex = (currentIndex + 1) % playlist.length;
+            const newItem = document.getElementById('slide-' + currentIndex);
+            if (!newItem) return; 
+            newItem.classList.add('active');
+            if (newItem.tagName === 'VIDEO') { newItem.currentTime = 0; newItem.play().catch(e => console.log(e)); newItem.onended = nextSlide; timer = setTimeout(nextSlide, 60000); newItem.onended = () => { clearTimeout(timer); nextSlide(); } } 
+            else { timer = setTimeout(nextSlide, settings.duration); }
+        }
+        setInterval(() => { const now = new Date(); document.getElementById('sidebar-clock').innerText = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}); }, 1000);
+        updateData(); setInterval(updateData, 2000); setInterval(() => fetchWeather(settings.weather_city), 60000 * 30);
+    </script>
+</body>
+</html>
